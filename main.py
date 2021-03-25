@@ -2,28 +2,28 @@ import pygeohash as pgh
 from pyproj import Proj, transform
 import warnings
 from cassandra.cluster import Cluster
-# from cassandra.policies import DCAwareRoundRobinPolicy
-# from cassandra.auth import PlainTextAuthProvider
 import csv
 import os
 from geopy.geocoders import Nominatim
 import sys
-import pandas as pd
 import time
+
+# from cassandra.policies import DCAwareRoundRobinPolicy
+# from cassandra.auth import PlainTextAuthProvider
+
 
 # cluster = Cluster(['192.168.35.237'])
 cluster = Cluster(['localhost'], port=9080)
 session = cluster.connect('scylla')
 
-table = session.execute('create table if not exists new_rain2(id int, station int, city text, parameter text, date text, rain float, hash text, primary key(id))')
-new_rain_insert = session.prepare("""
-    INSERT INTO new_rain2(id, station, city, parameter, date, rain, hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?)""")
+table = session.execute(
+    'create table if not exists imgw_rain(id int, station int, city text, parameter text, date text, rain float, hash text, primary key(id))')
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     EPSG_2180 = Proj(init='EPSG:2180')
     EPSG_4326 = Proj(init='EPSG:4326')
+
 
 # pl 48-55 14-24
 
@@ -34,6 +34,7 @@ def hashing_array(coords_arr):
         lon, lat = transform(EPSG_2180, EPSG_4326, coords[0], coords[1])
         hash = pgh.encode(lat, lon)
         h.append(hash)
+
     return h
 
 
@@ -44,6 +45,7 @@ def common_prefix(str1, str2):
             prefix += char1
         else:
             break
+
     return prefix
 
 
@@ -53,14 +55,15 @@ def hash_prefix(hash_arr):
     for hash in hash_arr:
         while prefix not in hash:
             prefix = prefix[:-1]
+
     return prefix
 
 
 def fill_stations():
     station_codes = {}
-    with open("D:\Studia\inz\imgw\kody_stacji.csv") as csv_file:
-        csv_reader = csv.reader(csv_file, delimiter=';')
-        for row in csv_reader:
+    with open("D:\\Studia\\inz\\imgw\\kody_stacji.csv") as file:
+        reader = csv.reader(file, delimiter=';')
+        for row in reader:
             station_codes[row[1]] = row[2]
 
     station_coord = {}
@@ -83,9 +86,9 @@ def fill_stations():
     for station in fails:
         del station_codes[station]
 
-    with open('D:\Studia\inz\imgw\kody_stacji_full.txt', 'w') as file:
+    with open('D:\\Studia\\inz\\imgw\\kody_stacji_full.csv', 'w') as file:
         for station in station_codes:
-            line = f'{station};{station_codes[station]};{station_coord[station]};{station_hash[station]}'
+            line = f'{station};{station_codes[station]};{station_coord[station]};{station_hash[station]}\n'
             file.write(line)
 
     return station_codes, station_coord, station_hash
@@ -95,35 +98,35 @@ def read_full_stations():
     station_codes = {}
     station_coord = {}
     station_hash = {}
-    with open('D:\Studia\inz\imgw\stations_full.csv') as file:
-        csv_reader = csv.reader(csv_file, delimiter=';')
+    with open('D:\\Studia\\inz\\imgw\\kody_stacji_full.csv') as file:
+        csv_reader = csv.reader(file, delimiter=';')
         for row in csv_reader:
             station_codes[row[0]] = row[1]
             station_coord[row[0]] = row[2]
             station_hash[row[0]] = row[3]
+
     return station_codes, station_coord, station_hash
 
 
-def check_time(func):
-    start = time.time()
-    func()
-    dt = time.time() - start
-    print(dt)
-
+new_rain_insert = session.prepare("""
+    INSERT INTO imgw_rain(id, station, city, parameter, date, rain, hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?)""")
 
 station_codes, station_coord, station_hash = read_full_stations()
-path = 'D:\Studia\inz\imgw\\'
-with os.scandir('D:\Studia\inz\imgw') as entries:
+path = 'D:\\Studia\\inz\\imgw\\'
+paths = []
+with os.scandir('D:\\Studia\\inz\\imgw') as entries:
     for entry in entries:
-        if 'B00608S' in entry.name: # suma opadu 10 min
-            path += entry.name
+        if 'B00608S' in entry.name:  # suma opadu 10 min
+            paths.append(path + entry.name)
 
+path = paths[0]
 data = []
 with open(path) as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=';')
     for row in csv_reader:
         if row[0] in station_codes:
-            table = [row[0], station_codes[row[0]], row[1], row[2], row[3], station_hash[row[0]]]
+            table = [row[0], station_codes[row[0]], row[1], row[2], row[3], station_hash[row[0]], ]
             data.append(table)
 
 start = time.time()
@@ -131,31 +134,10 @@ cnt = 0
 for row in data:
     tst = [int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5])]
     cnt += 1
-    # session.execute(new_rain_insert, tst)
-    session.execute_async(new_rain_insert, tst)
-# h = hashing_array(v)
+    # session.execute(new_rain_insert, tst)  # a lot of seconds
+    session.execute_async(new_rain_insert, tst) # 203 s
+
 now = time.time()
-print(now-start) #  u2uuyqxvgecw
-
-
+print(now - start)
+# h = hashing_array(v)
 # print(hash_prefix(h))
-
-# requested = (52.2662, 21.5286)
-# requested2 = (52.266, 21.528)
-# requested_hash = pgh.encode(requested[0], requested[1])
-# requested_hash2 = pgh.encode(requested2[0], requested2[1])
-# print(requested_hash, requested_hash2)
-# decode = pgh.decode(requested_hash)
-# decode = pgh.decode(requested_hash2)
-# l = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w',
-#      'x', 'y', 'z']
-# valid = {}
-# for c in l:
-#     try:
-#         valid[c] = (pgh.decode(c))
-#
-#     except:
-#         continue
-#
-# for i in range(0, 10):
-#     print(pgh.decode(f'u%s' % i))
