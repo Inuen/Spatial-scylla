@@ -4,20 +4,25 @@ import pygeohash as pgh
 from pyproj import Proj, transform
 
 
-def find_closest(geohash_origin, how_many=1, from_table='imgw_rain'):
+def find_closest(geohash_origin, how_many=1, from_table='imgw_rain', precision=-1):
+    # edit geohash_origin length to optimize time
     geohash = geohash_origin
+    start = time.time()
     query = session.execute(f"select * from {from_table} where hash like '{geohash}%' allow filtering;")
     records = []
     distances = {}
     set_hashed = set()
-    for row in query.current_rows:
-        if row[3] != geohash_origin:
-            set_hashed.add(row[3])
-            distances[row[3]] = pgh.geohash_haversine_distance(geohash_origin, row[3])/1000
-            records.append(row)
+    # for row in query.current_rows:
+    #     if row[3] != geohash_origin:
+    #         set_hashed.add(row[3])
+    #         distances[row[3]] = pgh.geohash_haversine_distance(geohash_origin, row[3])/1000
+    #         records.append(row)
+
+    if len(set_hashed) > how_many:
+        raise ValueError('Too generic geohash was passed. Pass more precised geohash.')
 
     while len(set_hashed) < how_many:
-        geohash = geohash[:-1]
+        geohash = geohash[:precision]
         query = session.execute(f"select * from {from_table} where hash like '{geohash}%' allow filtering;")
         for row in query.current_rows:
             if row[3] != geohash_origin:
@@ -34,24 +39,20 @@ def find_closest(geohash_origin, how_many=1, from_table='imgw_rain'):
                 del distances[max_key]
                 set_hashed.remove(max_key)
             records.clear()
-            for key in distances:
-                records.append(key)
 
-    if len(set_hashed) > how_many:
-        raise ValueError('Too generic geohash was passed. Pass more precised geohash.')
+    now = time.time() - start
 
     # if len(distances) > 1:
     #     max_key = max(distances, key=lambda key: distances[key])
     #     del distances[max_key]
+    print(now)
     return distances
 
 
-cluster = Cluster(['localhost'], port=9080)
+cluster = Cluster(['localhost'], port=9082)
 # cluster = Cluster(['192.168.35.237'])
 session = cluster.connect('scylla')
 
-start = time.time()
-a = find_closest('u3t5j84u5bss')
-now = time.time() - start
-print(now)
+a = find_closest('u3teght0p')
+
 print(a)

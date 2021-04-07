@@ -13,7 +13,7 @@ import time
 
 
 # cluster = Cluster(['192.168.35.237'])
-cluster = Cluster(['localhost'], port=9080)
+cluster = Cluster(['localhost'], port=9082)
 session = cluster.connect('scylla')
 
 table = session.execute(
