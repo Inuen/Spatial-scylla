@@ -12,11 +12,6 @@ def find_closest(geohash_origin, how_many=1, from_table='imgw_rain', precision=-
     records = []
     distances = {}
     set_hashed = set()
-    # for row in query.current_rows:
-    #     if row[3] != geohash_origin:
-    #         set_hashed.add(row[3])
-    #         distances[row[3]] = pgh.geohash_haversine_distance(geohash_origin, row[3])/1000
-    #         records.append(row)
 
     if len(set_hashed) > how_many:
         raise ValueError('Too generic geohash was passed. Pass more precised geohash.')
@@ -40,12 +35,12 @@ def find_closest(geohash_origin, how_many=1, from_table='imgw_rain', precision=-
                 set_hashed.remove(max_key)
             records.clear()
 
-    now = time.time() - start
+    dt = time.time() - start
 
     # if len(distances) > 1:
     #     max_key = max(distances, key=lambda key: distances[key])
     #     del distances[max_key]
-    print(now)
+    print(dt)
     return distances
 
 
@@ -53,6 +48,6 @@ cluster = Cluster(['localhost'], port=9082)
 # cluster = Cluster(['192.168.35.237'])
 session = cluster.connect('scylla')
 
-a = find_closest('u3teght0p')
+a = find_closest('u3teght0p', precision=-6)
 
 print(a)
