@@ -2,6 +2,7 @@ from cassandra.cluster import Cluster
 import time
 import pygeohash as pgh
 from pyproj import Proj, transform
+from shapely.geometry import Point, Polygon
 
 
 def find_closest(geohash_origin, how_many=1, from_table='imgw_rain', precision=-1):
@@ -36,10 +37,6 @@ def find_closest(geohash_origin, how_many=1, from_table='imgw_rain', precision=-
             records.clear()
 
     dt = time.time() - start
-
-    # if len(distances) > 1:
-    #     max_key = max(distances, key=lambda key: distances[key])
-    #     del distances[max_key]
     print(dt)
     return distances
 
@@ -48,6 +45,6 @@ cluster = Cluster(['localhost'], port=9082)
 # cluster = Cluster(['192.168.35.237'])
 session = cluster.connect('scylla')
 
-a = find_closest('u3teght0p', precision=-6)
+a = find_closest('u3teght0p')
 
 print(a)

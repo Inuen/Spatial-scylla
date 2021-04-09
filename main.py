@@ -17,7 +17,7 @@ cluster = Cluster(['localhost'], port=9082)
 session = cluster.connect('scylla')
 
 table = session.execute(
-    'create table if not exists imgw_rain(id int, station int, city text, parameter text, date text, rain float, hash text, primary key(id))')
+    'create table if not exists imgw(id int, station int, city text, parameter text, date text, value float, hash text, wkt text, primary key(id))')
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -109,8 +109,8 @@ def read_full_stations():
 
 
 new_rain_insert = session.prepare("""
-    INSERT INTO imgw_rain(id, station, city, parameter, date, rain, hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?)""")
+    INSERT INTO imgw_rain0(id, station, city, parameter, date, rain, hash, wkt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""")
 
 station_codes, station_coord, station_hash = read_full_stations()
 path = 'D:\\Studia\\inz\\imgw\\'
@@ -126,16 +126,22 @@ with open(path) as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=';')
     for row in csv_reader:
         if row[0] in station_codes:
-            table = [row[0], station_codes[row[0]], row[1], row[2], row[3], station_hash[row[0]], ]
+            coord = pgh.decode(station_hash[row[0]])
+            table = [row[0], station_codes[row[0]], row[1], row[2], row[3], station_hash[row[0]], f"POINT({coord[0]} {coord[1]})", ]
             data.append(table)
 
 start = time.time()
 cnt = 0
 for row in data:
-    tst = [int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5])]
+    query = """
+        INSERT INTO imgw(id, station, city, parameter, date, value, hash, wkt)
+        VALUES (%i, %i, '%s', '%s', '%s', %f, '%s', '%s');""" % (int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6]))
+    tst = [int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6])]
     cnt += 1
+    b = session.execute(query)
     # session.execute(new_rain_insert, tst)  # a lot of seconds
-    session.execute_async(new_rain_insert, tst) # 203 s
+    # a = session.execute_async(new_rain_insert, tst) # 203 s
+
 
 now = time.time()
 print(now - start)
