@@ -78,10 +78,12 @@ for attr in attributes_d:
 table_string = table_string + 'primary key(lokalnyId));'
 print(table_string)
 table = session.execute(table_string)
-prefix_str = 'INSERT INTO test_oipr('
+time.sleep(5)
+prefix_origin = 'INSERT INTO test_oipr('
 start = time.time()
 check = open('log.txt', 'w')
 for row in data:
+    prefix_str = prefix_origin
     values_str = ''
     for feature in row:
         if feature == 'hash':
@@ -97,7 +99,7 @@ for row in data:
 
     # print(prefix_str + values_str)
     new_rain_insert = session.execute(f"""{prefix_str + values_str}""")
-    check.write(new_rain_insert)
 
 now = time.time()
 print(now-start)
+check.close()

@@ -28,37 +28,6 @@ with warnings.catch_warnings():
 # pl 48-55 14-24
 
 
-def hashing_array(coords_arr):
-    h = []
-    for coords in coords_arr:
-        lon, lat = transform(EPSG_2180, EPSG_4326, coords[0], coords[1])
-        hash = pgh.encode(lat, lon)
-        h.append(hash)
-
-    return h
-
-
-def common_prefix(str1, str2):
-    prefix = ''
-    for char1, char2 in zip(str1, str2):
-        if char1 == char2:
-            prefix += char1
-        else:
-            break
-
-    return prefix
-
-
-def hash_prefix(hash_arr):
-    """Finding common start for array of hashes, made for relatively small polygons, lines"""
-    prefix = common_prefix(hash_arr[0], hash_arr[1])
-    for hash in hash_arr:
-        while prefix not in hash:
-            prefix = prefix[:-1]
-
-    return prefix
-
-
 def fill_stations():
     station_codes = {}
     with open("D:\\Studia\\inz\\imgw\\kody_stacji.csv") as file:
@@ -109,7 +78,7 @@ def read_full_stations():
 
 
 new_rain_insert = session.prepare("""
-    INSERT INTO imgw_rain0(id, station, city, parameter, date, rain, hash, wkt)
+    INSERT INTO imgw(id, station, city, parameter, date, value, hash, wkt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""")
 
 station_codes, station_coord, station_hash = read_full_stations()
@@ -122,28 +91,28 @@ with os.scandir('D:\\Studia\\inz\\imgw') as entries:
 
 path = paths[0]
 data = []
-with open(path) as csv_file:
-    csv_reader = csv.reader(csv_file, delimiter=';')
-    for row in csv_reader:
-        if row[0] in station_codes:
-            coord = pgh.decode(station_hash[row[0]])
-            table = [row[0], station_codes[row[0]], row[1], row[2], row[3], station_hash[row[0]], f"POINT({coord[0]} {coord[1]})", ]
-            data.append(table)
+for path in paths:
+    with open(path) as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=';')
+        for row in csv_reader:
+            if row[0] in station_codes:
+                coord = pgh.decode(station_hash[row[0]])
+                table = [row[0], station_codes[row[0]], row[1], row[2], row[3], station_hash[row[0]], f"POINT({coord[0]} {coord[1]})", ]
+                data.append(table)
 
-start = time.time()
-cnt = 0
-for row in data:
-    query = """
-        INSERT INTO imgw(id, station, city, parameter, date, value, hash, wkt)
-        VALUES (%i, %i, '%s', '%s', '%s', %f, '%s', '%s');""" % (int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6]))
-    tst = [int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6])]
-    cnt += 1
-    b = session.execute(query)
-    # session.execute(new_rain_insert, tst)  # a lot of seconds
-    # a = session.execute_async(new_rain_insert, tst) # 203 s
-
-
-now = time.time()
-print(now - start)
+    start = time.time()
+    cnt = 0
+    for row in data:
+        query = """
+            INSERT INTO imgw(id, station, city, parameter, date, value, hash, wkt)
+            VALUES (%i, %i, '%s', '%s', '%s', %f, '%s', '%s');""" % (int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6]))
+        tst = [int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6])]
+        cnt += 1
+        # b = session.execute(query)
+        session.execute_async(new_rain_insert, tst)
+    print(cnt)
+    now = time.time()
+    print(now - start)
+    print()
 # h = hashing_array(v)
 # print(hash_prefix(h))
