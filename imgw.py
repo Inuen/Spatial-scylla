@@ -17,7 +17,7 @@ cluster = Cluster(['localhost'], port=9082)
 session = cluster.connect('scylla')
 
 table = session.execute(
-    'create table if not exists imgw(id int, station int, city text, parameter text, date text, value float, hash text, wkt text, primary key(id))')
+    'create table if not exists imgw2(id int, station int, city text, parameter text, date text, value float, hash text, wkt text, primary key(id))')
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -78,7 +78,7 @@ def read_full_stations():
 
 
 new_rain_insert = session.prepare("""
-    INSERT INTO imgw(id, station, city, parameter, date, value, hash, wkt)
+    INSERT INTO imgw2(id, station, city, parameter, date, value, hash, wkt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""")
 
 station_codes, station_coord, station_hash = read_full_stations()
@@ -89,9 +89,10 @@ with os.scandir('D:\\Studia\\inz\\imgw') as entries:
         if 'B00608S' in entry.name:  # suma opadu 10 min
             paths.append(path + entry.name)
 
-path = paths[0]
+paths = paths[::-1]
 data = []
 for path in paths:
+    i = 0
     with open(path) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=';')
         for row in csv_reader:
@@ -99,20 +100,23 @@ for path in paths:
                 coord = pgh.decode(station_hash[row[0]])
                 table = [row[0], station_codes[row[0]], row[1], row[2], row[3], station_hash[row[0]], f"POINT({coord[0]} {coord[1]})", ]
                 data.append(table)
+                i += 1
+        print(i)
 
-    start = time.time()
-    cnt = 0
-    for row in data:
-        query = """
-            INSERT INTO imgw(id, station, city, parameter, date, value, hash, wkt)
-            VALUES (%i, %i, '%s', '%s', '%s', %f, '%s', '%s');""" % (int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6]))
-        tst = [int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6])]
-        cnt += 1
-        # b = session.execute(query)
-        session.execute_async(new_rain_insert, tst)
-    print(cnt)
-    now = time.time()
-    print(now - start)
-    print()
+#####????? tab czy nie tab
+start = time.time()
+cnt = 0
+for row in data:
+    query = """
+        INSERT INTO imgw2(id, station, city, parameter, date, value, hash, wkt)
+        VALUES (%i, %i, '%s', '%s', '%s', %f, '%s', '%s');""" % (int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6]))
+    tst = [int(cnt), int(row[0]), str(row[1]), str(row[2]), str(row[3]), float(row[4].replace(',', '.')), str(row[5]), str(row[6])]
+    cnt += 1
+    # b = session.execute(query)
+    session.execute_async(new_rain_insert, tst)
+print(cnt)
+now = time.time()
+print(now - start)
+print()
 # h = hashing_array(v)
 # print(hash_prefix(h))

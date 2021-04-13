@@ -1,47 +1,7 @@
 from cassandra.cluster import Cluster
 import time
 import pygeohash as pgh
-from pyproj import Proj, transform
 from shapely import geometry
-import warnings
-import geopandas as gpd
-
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    EPSG_2180 = Proj(init='EPSG:2180')
-    EPSG_4326 = Proj(init='EPSG:4326')
-
-
-def hashing_array(coords_arr):
-    h = []
-    for coords in coords_arr:
-        lon, lat = transform(EPSG_2180, EPSG_4326, coords[0], coords[1])
-        hash = pgh.encode(lat, lon)
-        h.append(hash)
-
-    return h
-
-
-def common_prefix(str1, str2):
-    prefix = ''
-    for char1, char2 in zip(str1, str2):
-        if char1 == char2:
-            prefix += char1
-        else:
-            break
-
-    return prefix
-
-
-def hash_prefix(hash_arr):
-    """Finding common start for array of hashes, made for relatively small polygons, lines"""
-    prefix = common_prefix(hash_arr[0], hash_arr[1])
-    for hash in hash_arr:
-        while prefix not in hash:
-            prefix = prefix[:-1]
-
-    return prefix
 
 
 def find_closest(geohash_origin, how_many=1, from_table='imgw_rain', precision=-1):
@@ -89,6 +49,7 @@ def geohashes_to_polygon(array_of_hashes):
 
     polygon = polygon[:-2]
     polygon += '))'
+    return polygon
 
 
 def geohash_boundary(geohash):
@@ -104,6 +65,15 @@ def geohash_boundary(geohash):
 
 def polygon_to_geohashes(shapely_polygon, simple_polygon=True):
     centroid = shapely_polygon.centroid
+    geohash_centroid = pgh.encode(centroid.y, centroid.x, precision=12)
+    geohash_bbox = geohash_boundary(geohash_centroid)
+    while shapely_polygon.contains(geohash_bbox):
+        geohash_center = geohash_centroid[:-1]
+        geohash_bbox = geohash_boundary(geohash_center)
+
+    geohash_centroid = geohash_centroid[:geohash_center+1]
+    print(geohash_center, ' ', geohash_centroid)
+    print()
 
 
 cluster = Cluster(['localhost'], port=9082)
