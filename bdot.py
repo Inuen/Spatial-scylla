@@ -4,6 +4,7 @@ from cassandra.cluster import Cluster
 import xml.etree.ElementTree as ET
 import pygeohash as pgh
 import time
+from geohash_utils import *
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -14,7 +15,7 @@ cluster = Cluster(['localhost'], port=9082)
 session = cluster.connect('scylla')
 
 
-bdot_path = r"D:\Studia\inz\bdot\BDOT10k\PL.PZGiK.336.2262__OT_OIPR_P.xml"
+bdot_path = r"D:\Studia\inz\bdot\BDOT10k\PL.PZGiK.336.2262__OT_KUHO_A.xml"
 
 
 tree = ET.parse(bdot_path)
@@ -53,25 +54,57 @@ for child in root:
                     child_to_attribute(fc2, attributes, attributes_d, row)
                 else:
                     for fc3 in fc2:
-                        child_to_attribute(fc3, attributes, attributes_d, row)
+                        if fc3.attrib is not None:
+                            if fc3.text.strip() != '':
+                                child_to_attribute(fc3, attributes, attributes_d, row)
+                            else:
+                                for fc4 in fc3:
+                                    if fc4.attrib is not None:
+                                        for fc5 in fc4:
+                                            if fc5.text.strip() != '':
+                                                child_to_attribute(fc5, attributes, attributes_d, row)
+                                    if fc4.text.strip() != '':
+                                        child_to_attribute(fc4, attributes, attributes_d, row)
+                        else:
+                            child_to_attribute(fc3, attributes, attributes_d, row)
+    if 'pos' in row:
+        split_coord = row['pos'].split(' ')
+        x, y = split_coord[0], split_coord[1]
+        lon, lat = transform(EPSG_2180, EPSG_4326, x, y)
+        geohash = pgh.encode(lat, lon)
+        row['wkt'] = f'POINT( {lon} {lat} )'
+        row['hash'] = geohash
+        attributes.append('hash')
+        attributes_d['hash'] = 'text'
+        attributes.append('wkt')
+        attributes_d['wkt'] = 'text'
+        data.append(row)
+    elif 'posList' in row:
+        split_coord = row['posList'].split(' ')
+        coordinates = []
+        centroid = [0, 0]
+        for coord in range(0, len(split_coord), 2):
+            x = split_coord[coord]
+            y = split_coord[coord + 1]
+            lon, lat = transform(EPSG_2180, EPSG_4326, x, y)
+            coordinates.append([lon, lat])
+            centroid[0] += lon
+            centroid[1] += lat
+        centroid[0] /= len(split_coord)
+        centroid[1] /= len(split_coord)
+        centroid[0] *= 2
+        centroid[1] *= 2
+        wkt = coord_to_wkt_polygon(coordinates)
+        row['wkt'] = wkt
+        row['hash'] = pgh.encode(centroid[1], centroid[0], precision=12) # centroid
+        attributes.append('wkt')
+        attributes_d['wkt'] = 'text'
+        attributes.append('hash')
+        attributes_d['hash'] = 'text'
+        data.append(row)
 
-    split_coord = row['pos'].split(' ')
-    x, y = split_coord[0], split_coord[1]
-    lon, lat = transform(EPSG_2180, EPSG_4326, x, y)
-    geohash = pgh.encode(lat, lon)
-    row['hash'] = geohash
-    attributes.append('hash')
-    attributes_d['hash'] = 'text'
-    data.append(row)
 
-
-
-# print(data)
-# print(attributes_d)
-# print(attributes, len(attributes))
-# id int, station int, city text, parameter text, date text, rain float, hash text, primary key(id))
-
-table_string = 'create table if not exists test_oipr('
+table_string = 'create table if not exists adja('
 for attr in attributes_d:
     table_string += attr + f' {attributes_d[attr]}, '
 
@@ -79,7 +112,7 @@ table_string = table_string + 'primary key(lokalnyId));'
 print(table_string)
 table = session.execute(table_string)
 time.sleep(5)
-prefix_origin = 'INSERT INTO test_oipr('
+prefix_origin = 'INSERT INTO adja('
 start = time.time()
 check = open('log.txt', 'w')
 for row in data:
