@@ -5,7 +5,6 @@ from pyproj import Proj, transform
 import warnings
 import folium
 
-
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     EPSG_2180 = Proj(init='EPSG:2180')
@@ -34,13 +33,23 @@ def hash_prefix(hash_arr):
     return prefix
 
 
-def hashing_array(coords_arr):
+def hashing_array(coordinates, precision=12):
     """returns geohashed list of coordinates"""
     h = []
-    for coords in coords_arr:
-        lon, lat = transform(EPSG_2180, EPSG_4326, coords[0], coords[1])
-        hash = pgh.encode(lat, lon)
-        h.append(hash)
+    for coord in coordinates:
+        geohash = pgh.encode(coord[0], coord[1], precision)
+        h.append(geohash)
+
+    return h
+
+
+def hashing_array_from_2180(coords_arr, precision=12):
+    """returns geohashed list of coordinates in 2180"""
+    h = []
+    for coord in coords_arr:
+        lon, lat = transform(EPSG_2180, EPSG_4326, coord[0], coord[1])
+        geohash = pgh.encode(lat, lon, precision)
+        h.append(geohash)
 
     return h
 
@@ -61,19 +70,16 @@ def neighbouring_centroids(geohash):
     return centroids, precision
 
 
-def generate_neighbouring_hashes(centroids, precision=12):
-    neighbours = []
-    for centroid in centroids:
-        geohash = pgh.encode(centroid[0], centroid[1], precision)
-        neighbours.append(geohash)
-
-    return neighbours
+def get_middle_neighbours(geohash):
+    centroids, precision = neighbouring_centroids(geohash)
+    middle_neighbours = centroids[0:4]
+    return hashing_array(middle_neighbours, precision)
 
 
 def get_neighbours(geohash):
     """returns a list of neighbours (of the same precision) for given geohash"""
     centroids, precision = neighbouring_centroids(geohash)
-    neighbours = generate_neighbouring_hashes(centroids, precision)
+    neighbours = hashing_array(centroids, precision)
     return neighbours
 
 
@@ -89,6 +95,19 @@ def get_geohash_corners(geohash):
     return corners
 
 
+def get_k_neighbours(geohash, k):
+    precision = len(geohash)
+    lat_centroid, lon_centroid, lat_err, lon_err = pgh.decode_exactly(geohash)
+    neighbours = []
+    min_corner = (lat_centroid - k * 2 * lat_err, lon_centroid - k * 2 * lon_err)
+    for jumper in range(0, 2 * k + 1):
+        for counter in range(0, 2 * k + 1):
+            cell = [min_corner[0] + counter * 2 * lat_err, min_corner[1] + jumper * 2 * lon_err]
+            neighbours.append(pgh.encode(cell[0], cell[1], precision))
+
+    return neighbours
+
+
 def coord_to_wkt_line(coordinates):
     """returns list of coordinates to a line in wkt"""
     wkt = "LINE( "
@@ -97,6 +116,18 @@ def coord_to_wkt_line(coordinates):
     wkt = wkt[:-2]
     wkt += ')'
     return wkt
+
+
+def coord_to_wkt_polygon(coordinates, interior=False):
+    """returns list of coordinates to a line in wkt"""
+    coordinates.append(coordinates[0])
+    if not interior:
+        wkt = "POLYGON( "
+        for coord in coordinates:
+            wkt += f'{str(coord[0])} {str(coord[1])}, '
+        wkt = wkt[:-2]
+        wkt += ' )'
+        return wkt
 
 
 def coord_to_wkt_point(coord):
@@ -108,36 +139,56 @@ def coord_to_wkt_point(coord):
     return wkt
 
 
-def visualize_polygon(polyline, color='red', folium_map=None):
+def visualize_polygon(points_list, color='red', folium_map=None):
     """visualization using folium"""
-    polyline.append(polyline[0])
+    points_list.append(points_list[0])
     lat = []
     lon = []
-    for point in polyline:
+    for point in points_list:
         lat.append(point[0])
         lon.append(point[1])
 
     if folium_map is None:
-        m = folium.Map(location=[sum(lat) / len(lat), sum(lon) / len(lon)], zoom_start=13, tiles='cartodbpositron')
+        m = folium.Map(location=[sum(lat) / len(lat), sum(lon) / len(lon)], zoom_start=19, tiles='cartodbpositron')
     else:
         m = folium_map
 
-    my_polygon = folium.Polygon(locations=polyline, weight=8, color=color)
+    my_polygon = folium.Polygon(locations=points_list, weight=8, color=color)
     m.add_child(my_polygon)
     return m
 
 
-coord = (53.5007, 19.495)
-geohash = pgh.encode(coord[0], coord[1], precision=6)
-neighbours = get_neighbours(geohash)
-corners = get_geohash_corners(geohash)
-print(geohash)
-print(neighbours)
-print(corners)
-print(coord_to_wkt_point(coord))
-vis = visualize_polygon(corners)
-for neighbour in neighbours:
-    m = visualize_polygon(get_geohash_corners(neighbour), 'blue', folium_map=vis)
+def polygon_wkt_to_points(wkt):
+    points_list = []
+    coordinates = wkt
+    for char in coordinates:
+        if char.isalpha():
+            coordinates = coordinates.replace(char, '')
+        else:
+            break
+    multi = coordinates.count(')')
+    if multi < 2:
+        coordinates = coordinates.replace('( ', '')
+        coordinates = coordinates.replace(' ) ', '')
+        coordinates = coordinates.replace(' )', '')
+        coordinates = coordinates.replace('(', '')
+        coordinates = coordinates.replace(')', '')
 
-m = visualize_polygon(corners, 'purple', folium_map=vis)
-vis.save(" my_map2.html ")
+    coordinates = coordinates.split(', ')
+    for coord in coordinates:
+        lon, lat = coord.split(' ')
+        points_list.append([float(lat), float(lon)])
+
+    return points_list[:-1]
+
+
+def centroid_from_points(points_list):
+    centroid = [0, 0]
+    length = len(points_list)
+    for point in points_list:
+        centroid[0] += float(point[0])
+        centroid[1] += float(point[1])
+
+    centroid[0] /= length
+    centroid[1] /= length
+    return centroid
