@@ -14,7 +14,7 @@ import time
 
 # cluster = Cluster(['192.168.35.237'])
 cluster = Cluster(['localhost'], port=9082)
-session = cluster.connect('scylla')
+session = cluster.connect('scylla2')
 
 table = session.execute(
     'create table if not exists imgw2(id int, station int, city text, parameter text, date text, value float, hash text, wkt text, primary key(id))')

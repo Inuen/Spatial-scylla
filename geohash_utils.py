@@ -4,6 +4,8 @@ from pyproj import Proj, transform
 import warnings
 import folium
 import queue
+from shapely.strtree import STRtree
+
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -55,6 +57,7 @@ def hashing_array_from_2180(coords_arr, precision=12):
 
 
 def neighbouring_centroids(geohash):
+    """returns a list of neighbours' centroids and the used precision of geohashing"""
     lat_centroid, lon_centroid, lat_err, lon_err = pgh.decode_exactly(geohash)
     centroid_1 = (lat_centroid + 2 * lat_err, lon_centroid)
     centroid_2 = (lat_centroid - 2 * lat_err, lon_centroid)
@@ -96,7 +99,7 @@ def get_geohash_corners(geohash):
 
 
 def get_k_neighbours(geohash, k):
-    """returns a list of geohash along with neighbours of k degree"""
+    """returns a list of origin geohash along with neighbours of k degree"""
     precision = len(geohash)
     lat_centroid, lon_centroid, lat_err, lon_err = pgh.decode_exactly(geohash)
     neighbours = []
@@ -109,25 +112,25 @@ def get_k_neighbours(geohash, k):
     return neighbours
 
 
-def get_k_neighbours_v2(geohash, k):
-    """returns a list of neighbours of k degree (slower than get_k_neighbours)"""
-    precision = len(geohash)
-    lat_centroid, lon_centroid, lat_err, lon_err = pgh.decode_exactly(geohash)
-    neighbours = []
-    min_corner = [lat_centroid - k * 2 * lat_err, lon_centroid - k * 2 * lon_err]
-    jumps = 1
-    edge = 2 * k + 1
-    for jumper in range(0, (2 * k + 1) * (2 * k + 1)):
-        cell = [min_corner[0] + (jumper % (2 * k + 1)) * 2 * lat_err, min_corner[1]]
-        if (jumper % (jumps * edge - 1)) == 0 and jumper != 0:
-            min_corner[1] += 2 * lon_err
-            jumps += 1
-
-        geohash_cell = pgh.encode(cell[0], cell[1], precision)
-        if geohash_cell != geohash:
-            neighbours.append(geohash_cell)
-
-    return neighbours
+# def get_k_neighbours_v2(geohash, k):
+#     """returns a list of neighbours of k degree (slower than get_k_neighbours)"""
+#     precision = len(geohash)
+#     lat_centroid, lon_centroid, lat_err, lon_err = pgh.decode_exactly(geohash)
+#     neighbours = []
+#     min_corner = [lat_centroid - k * 2 * lat_err, lon_centroid - k * 2 * lon_err]
+#     jumps = 1
+#     edge = 2 * k + 1
+#     for jumper in range(0, (2 * k + 1) * (2 * k + 1)):
+#         cell = [min_corner[0] + (jumper % (2 * k + 1)) * 2 * lat_err, min_corner[1]]
+#         if (jumper % (jumps * edge - 1)) == 0 and jumper != 0:
+#             min_corner[1] += 2 * lon_err
+#             jumps += 1
+#
+#         geohash_cell = pgh.encode(cell[0], cell[1], precision)
+#         if geohash_cell != geohash:
+#             neighbours.append(geohash_cell)
+#
+#     return neighbours
 
 
 def coord_to_wkt_line(coordinates):
@@ -163,7 +166,8 @@ def coord_to_wkt_point(coord):
 
 def visualize_polygon(points_list, color='red', folium_map=None):
     """visualization using folium"""
-    points_list.append(points_list[0])
+    if points_list[0] != points_list[1]:
+        points_list.append(points_list[0])
     lat = []
     lon = []
     for point in points_list:
@@ -219,6 +223,7 @@ def polygon_wkt_to_points(wkt):
 
 
 def centroid_from_points(points_list):
+    """returns centroid from a list of points [[x,y]]"""
     centroid = [0, 0]
     length = len(points_list)
     for point in points_list:
@@ -279,7 +284,7 @@ def points_to_polygon_shape(points):
 
 
 def shapely_polygon_to_geohashes(shape, precision=4, inside=False):
-    """returns a list of some precison geohashes which are contained/intersected with a polygon shape"""
+    """returns a list of some precison geohashes which are contained/intersected within a polygon shape"""
     checking_geohashes = queue.Queue()
     return_set = set()
     outer = set()
@@ -292,7 +297,7 @@ def shapely_polygon_to_geohashes(shape, precision=4, inside=False):
         while not checking_geohashes.empty():
             check = checking_geohashes.get()
             corners = get_geohash_corners(check)
-            corners.append(corners[-1])
+            corners.append(corners[0]) # -1 -> 0
             bbox = geometry.Polygon(corners)
 
             if shape_bbox.contains(bbox):
@@ -310,7 +315,7 @@ def shapely_polygon_to_geohashes(shape, precision=4, inside=False):
         while not checking_geohashes.empty():
             check = checking_geohashes.get()
             corners = get_geohash_corners(check)
-            corners.append(corners[-1])
+            corners.append(corners[0]) # -1 -> 0
             bbox = geometry.Polygon(corners)
 
             if shape_bbox.intersects(bbox):
@@ -327,3 +332,37 @@ def shapely_polygon_to_geohashes(shape, precision=4, inside=False):
     return list(return_set)
 
 
+def geohashes_list_to_condition(geohash_list):
+    """returns a list converted to string with '[' and ']' replaced with '(' and ')' """
+    return str(geohash_list).replace('[', '(').replace(']', ')')
+
+
+def get_degree_of_kinship(points, geohash):
+    poly = points_to_polygon_shape(points)
+
+    if polygon_in_geohash_bbox_check(points, geohash[:4]):
+        if polygon_in_geohash_bbox_check(points, geohash[:8]):
+            degree_of_kinship = 2
+        else:
+            degree_of_kinship = 1
+    else:
+        degree_of_kinship = 0
+        many_hashes = shapely_polygon_to_geohashes(poly)
+        condition_list = geohashes_list_to_condition(many_hashes)
+
+    return degree_of_kinship
+
+
+def points_to_strtree(points, poly):
+    tree = STRtree(points)  # create a 'database' of points
+
+    res = [point for point in tree.query(poly) if poly.contains(point)]  # run the query (a single shot) - and test if the found points are actually inside the polygon.
+
+    result = [[o.x, o.y] for o in res]
+
+    return tree, result
+
+
+def strtree_containing_polygons(points_of_poly, another_poly):
+    tree, result = points_to_strtree(points_of_poly, another_poly)
+    return len(points_of_poly) == len(result)

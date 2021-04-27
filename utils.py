@@ -4,7 +4,7 @@ import pygeohash as pgh
 from shapely import geometry
 
 
-def find_closest(geohash_origin, how_many=1, from_table='imgw_rain', precision=-1):
+def find_closest(session, geohash_origin, how_many=1, from_table='imgw_rain', precision=-1):
     # edit geohash_origin length to optimize time
     geohash = geohash_origin
     start = time.time()
@@ -61,28 +61,3 @@ def geohash_boundary(geohash):
     corner_4 = (lat + lat_err, lon - lon_err)[::-1]
 
     return geometry.Polygon([corner_1, corner_2, corner_3, corner_4, corner_1])
-
-
-def polygon_to_geohashes(shapely_polygon, simple_polygon=True):
-    centroid = shapely_polygon.centroid
-    geohash_centroid = pgh.encode(centroid.y, centroid.x, precision=12)
-    geohash_bbox = geohash_boundary(geohash_centroid)
-    while shapely_polygon.contains(geohash_bbox):
-        geohash_center = geohash_centroid[:-1]
-        geohash_bbox = geohash_boundary(geohash_center)
-
-    geohash_centroid = geohash_centroid[:geohash_center+1]
-    print(geohash_center, ' ', geohash_centroid)
-    print()
-
-
-cluster = Cluster(['localhost'], port=9082)
-# cluster = Cluster(['192.168.35.237'])
-session = cluster.connect('scylla')
-
-# a = find_closest('u3teght0p')
-s = pgh.decode_exactly('u3teght0p')
-k = pgh.decode('u3teght0p')
-print(s)
-print(k)
-# print(a)

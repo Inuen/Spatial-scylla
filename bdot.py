@@ -12,7 +12,7 @@ with warnings.catch_warnings():
     EPSG_4326 = Proj(init='EPSG:4326')
 
 cluster = Cluster(['localhost'], port=9082)
-session = cluster.connect('scylla')
+session = cluster.connect('scylla2')
 
 
 bdot_path = r"D:\Studia\inz\bdot\BDOT10k\PL.PZGiK.336.2262__OT_KUHO_A.xml"
@@ -96,30 +96,33 @@ for child in root:
         centroid[1] *= 2
         wkt = coord_to_wkt_polygon(coordinates)
         row['wkt'] = wkt
-        row['hash'] = pgh.encode(centroid[1], centroid[0], precision=12) # centroid
         attributes.append('wkt')
         attributes_d['wkt'] = 'text'
-        attributes.append('hash')
-        attributes_d['hash'] = 'text'
+        encoded_coord = pgh.encode(centroid[1], centroid[0], precision=12)
+        for i in range(1, 4):
+            name = 'hash' + str(i)
+            row[name] = encoded_coord[(i - 1) * 4 : i * 4]  # centroid
+            attributes.append(name)
+            attributes_d[name] = 'text'
         data.append(row)
 
 
-table_string = 'create table if not exists adja('
+table_string = 'create table if not exists kuho('
 for attr in attributes_d:
     table_string += attr + f' {attributes_d[attr]}, '
 
 table_string = table_string + 'primary key(lokalnyId));'
 print(table_string)
 table = session.execute(table_string)
-time.sleep(5)
-prefix_origin = 'INSERT INTO adja('
+time.sleep(2)
+prefix_origin = 'INSERT INTO kuho('
 start = time.time()
 check = open('log.txt', 'w')
 for row in data:
     prefix_str = prefix_origin
     values_str = ''
     for feature in row:
-        if feature == 'hash':
+        if feature == 'hash3':
             prefix_str += feature + ')'
         else:
             prefix_str += feature + ', '
@@ -130,7 +133,7 @@ for row in data:
     prefix_str += ' VALUES ('
     values_str = values_str[:-2] + ');'
 
-    # print(prefix_str + values_str)
+    print(prefix_str + values_str)
     new_rain_insert = session.execute(f"""{prefix_str + values_str}""")
 
 now = time.time()
